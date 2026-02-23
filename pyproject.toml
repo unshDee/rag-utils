@@ -1,0 +1,12 @@
+[project]
+name = "rag-utils"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "docling>=2.74.0",
+    "docling-core>=2.65.2",
+    "pandas>=2.3.3",
+    "transformers>=4.57.6",
+]
