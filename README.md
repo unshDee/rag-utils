@@ -20,3 +20,10 @@ python retrieval_eval.py --generate-sample sample.jsonl
 python retrieval_eval.py sample.jsonl --k 1 5 10
 ```
 
+### `chunk_quality_scorer.py`
+Scores chunks on five text-quality signals: token count (prefers 60–400), type-token ratio (information density), stopword ratio, sentence completeness (starts capital, ends punctuation), and heading-text overlap. Weighted average → a 0–1 quality score. Useful for filtering noise before indexing.
+
+**Deps:** stdlib only
+```
+python chunk_quality_scorer.py chunks_output.json --min-score 0.4 --out filtered.json
+```
