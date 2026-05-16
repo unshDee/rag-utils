@@ -52,3 +52,12 @@ Two query expansion techniques to improve retrieval recall. **Multi-query:** rep
 python query_expander.py --query "what causes gradient vanishing?" --mode both
 ```
 
+### `pdf_to_markdown.py`
+Converts PDFs to clean Markdown using `pdfplumber`. Detects two-column layouts (splits and processes each column), converts tables to Markdown table syntax, infers headings from font size ratios, and removes repeated header/footer lines. Does not handle scanned PDFs (no OCR).
+
+**Deps:** `pdfplumber`
+```
+python pdf_to_markdown.py paper.pdf --out paper.md
+python pdf_to_markdown.py *.pdf --out-dir markdown/
+```
+
