@@ -35,3 +35,20 @@ Finds and merges consecutive chunks that share overlapping text — common when 
 ```
 python chunk_overlap_merger.py chunks.json --overlap-chars 80 --show-merges
 ```
+
+### `context_window_packer.py`
+Given retrieved chunks with scores and a token budget, greedily selects the best subset to fit in the context window. Sorts by score-per-token (fractional knapsack) so high-value, low-cost chunks always win. Also deduplicates by `chunk_id` and supports a minimum score threshold. Falls back to character-based token estimation if tiktoken isn't installed.
+
+**Deps:** `tiktoken` (optional)
+```
+python context_window_packer.py results.json --budget 4000 --min-score 0.5 --print-context
+```
+
+### `query_expander.py`
+Two query expansion techniques to improve retrieval recall. **Multi-query:** rephrases the query N ways (different angles/specificity), runs retrieval for each, and merges results. **HyDE:** generates a hypothetical answer document and uses its embedding as the retrieval query instead — the answer lives closer to real answers in embedding space than the question does. Both use the Claude API (Haiku by default for speed).
+
+**Deps:** `anthropic`, `ANTHROPIC_API_KEY` env var
+```
+python query_expander.py --query "what causes gradient vanishing?" --mode both
+```
+
