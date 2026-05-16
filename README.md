@@ -27,3 +27,11 @@ Scores chunks on five text-quality signals: token count (prefers 60–400), type
 ```
 python chunk_quality_scorer.py chunks_output.json --min-score 0.4 --out filtered.json
 ```
+
+### `chunk_overlap_merger.py`
+Finds and merges consecutive chunks that share overlapping text — common when using sliding-window chunking or ingesting the same document through multiple pipelines. Detects overlaps by matching suffixes of chunk N against prefixes of chunk N+1, then stitches them without the repeated portion.
+
+**Deps:** stdlib only
+```
+python chunk_overlap_merger.py chunks.json --overlap-chars 80 --show-merges
+```
