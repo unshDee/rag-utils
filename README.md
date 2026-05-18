@@ -1,5 +1,5 @@
 # rag-utils
-scripts and code useful for rag
+scripts and code useful for rag, a collection of what I have learned and have used while working on rag pipelines
 
 ---
 
@@ -61,3 +61,15 @@ python pdf_to_markdown.py paper.pdf --out paper.md
 python pdf_to_markdown.py *.pdf --out-dir markdown/
 ```
 
+### `rag_tracer.py`
+Lightweight span-based tracer for RAG pipelines. Records named spans with latency, token counts, and custom metadata. Works as both a context manager and a `@traced()` decorator. Writes JSON Lines to a trace file for analysis. Thread-safe, zero overhead when `TRACING_ENABLED=false`. Includes a `print_summary()` that renders a timing tree.
+
+**Deps:** stdlib only
+```python
+with tracer.span("retrieval", query=q) as s:
+    results = search(q)
+    s.set(n_results=len(results))
+
+tracer.print_summary()
+tracer.flush()   # writes to rag_traces.jsonl
+```
