@@ -73,3 +73,12 @@ with tracer.span("retrieval", query=q) as s:
 tracer.print_summary()
 tracer.flush()   # writes to rag_traces.jsonl
 ```
+
+### `embedding_cache.py`
+SQLite-backed disk cache for embeddings. Hashes `(model_id, text)` pairs so the same text is never re-embedded twice across runs. Supports batch encoding with cache hits, configurable TTL, and any embedder callable (sentence-transformers, OpenAI, Cohere, etc.). Thread-safe via SQLite WAL mode + thread-local connections.
+
+**Deps:** `numpy`, `sentence-transformers` (or any embedder)
+```python
+cache = EmbeddingCache("embeddings.db", model_id="all-MiniLM-L6-v2")
+embeddings = cache.encode(model.encode, texts)   # hits cache on second call
+```
