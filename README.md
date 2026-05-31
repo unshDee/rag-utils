@@ -82,3 +82,12 @@ SQLite-backed disk cache for embeddings. Hashes `(model_id, text)` pairs so the 
 cache = EmbeddingCache("embeddings.db", model_id="all-MiniLM-L6-v2")
 embeddings = cache.encode(model.encode, texts)   # hits cache on second call
 ```
+
+### `semantic_dedup.py`
+Near-duplicate chunk removal. First does a free exact-dedup pass (MD5 hash). Then either embeds all chunks and does greedy cosine-similarity dedup (prefers higher-quality chunks, skips anything above the similarity threshold), or falls back to character k-shingle Jaccard similarity for a dep-free mode. Threshold is configurable — 0.92 for near-dups, lower for aggressive dedup.
+
+**Deps:** `numpy`, `sentence-transformers` (embedding mode) or stdlib (jaccard mode)
+```
+python semantic_dedup.py chunks.json --threshold 0.92 --out deduped.json
+python semantic_dedup.py chunks.json --mode jaccard --threshold 0.7
+```
