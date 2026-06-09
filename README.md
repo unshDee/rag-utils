@@ -91,3 +91,16 @@ Near-duplicate chunk removal. First does a free exact-dedup pass (MD5 hash). The
 python semantic_dedup.py chunks.json --threshold 0.92 --out deduped.json
 python semantic_dedup.py chunks.json --mode jaccard --threshold 0.7
 ```
+
+### `hybrid_retriever.py`
+Combines BM25 sparse retrieval (via `rank-bm25`) with dense vector search (FAISS or numpy fallback), fused using Reciprocal Rank Fusion. RRF avoids needing to normalize scores across retrieval systems — each system contributes rank-based votes. Exposes a `HybridRetriever` class importable into any pipeline, plus a standalone `rrf_fuse()` function for custom fusion.
+
+**Deps:** `numpy`, `rank-bm25`, `faiss-cpu` (optional), `sentence-transformers` (for dense)
+```
+python hybrid_retriever.py --demo
+python hybrid_retriever.py --index chunks.json --query "what is RAG?" --top-k 5
+```
+```python
+retriever = HybridRetriever(chunks, embedder=model.encode)
+results = retriever.search("how does chunking work?", top_k=10)
+```
