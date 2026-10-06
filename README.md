@@ -7,9 +7,11 @@ Each script is standalone — no framework, no shared package to install, copy t
 ingest      docx_to_chunks.py · pdf_to_markdown.py
 chunk       semantic_chunker.py · chunk_overlap_merger.py · chunk_quality_scorer.py · semantic_dedup.py
 enrich      contextual_retrieval.py · late_chunking.py · embedding_cache.py
+index       binary_quant_index.py
 retrieve    hybrid_retriever.py · query_expander.py
-rerank      cross_encoder_reranker.py
+rerank      cross_encoder_reranker.py · context_pruner.py
 pack        context_window_packer.py
+gate        sufficient_context.py (should we answer at all?)
 evaluate    eval_set_generator.py → retrieval_eval.py (did we find it?) · answer_eval.py (did we use it?)
 observe     rag_tracer.py
 ```
@@ -170,4 +172,37 @@ Nobody hand-labels 200 queries, so most RAG systems ship with no evaluation and 
 ```
 python eval_set_generator.py chunks.json --n 50 --out golden.jsonl
 python retrieval_eval.py golden.jsonl --k 1 5 10     # ...then measure
+```
+
+### `binary_quant_index.py`
+Shrinks the dense index 32x–256x by stacking two compressions that work on different axes: **Matryoshka truncation** ([Kusupati et al. 2022](https://arxiv.org/abs/2205.13147) — keep the leading dims of an MRL-trained model, re-normalize) and **binary quantization** (1 bit per dim, searched by XOR + popcount). Binary alone loses recall; the step that makes it usable is **rescoring** — oversample candidates by Hamming distance, then rescore them with the full-precision *query* against the ±1 docs, which recovers most of the loss at zero extra memory. `--demo` (or `--embeddings` on your own `.npz`) prints the tradeoff table: on the synthetic MRL-style set, 768 dims binary keeps hit@10 at 1.00 (32x smaller), and 192 dims goes from 0.86 → 0.95 with rescoring (128x smaller). Only truncate models trained for it — on a non-MRL model truncation is just damage.
+
+**Deps:** `numpy`
+```
+python binary_quant_index.py --demo
+python binary_quant_index.py --embeddings late_embeddings.npz --dims 1024 256 128 --oversample 4
+```
+```python
+index = BinaryIndex(doc_embeddings, dims=256)
+hits = index.search(query_embedding, top_k=10, oversample=4)   # [(idx, score), ...]
+```
+
+### `context_pruner.py`
+Reranking picks which *chunks* to keep; this drops the *sentences* inside them that don't help. A kept 400-token chunk usually answers in one or two sentences, and the filler around it costs tokens and distracts the generator. Implements [Provence](https://arxiv.org/abs/2501.16214) (Chirkova et al., NAVER, ICLR 2025): a cross-encoder that labels each sentence keep/drop for the query and emits a rerank score from the same forward pass — so rerank + prune is one model call. Pruning is dynamic: an irrelevant chunk prunes to nothing (and is dropped before packing), a dense one keeps everything; no fixed compression ratio to tune. Reported up to ~80% compression with equal or better answers. A `sentence` backend approximates it with the cross-encoder you already have (per-sentence scores, threshold relative to the chunk's best sentence, optional neighbour window) for when `trust_remote_code` isn't an option. On the demo, both backends cut 67% of the characters and empty the off-topic chunk.
+
+**Deps:** `transformers`, `torch`, `nltk` (provence) or `sentence-transformers` (sentence backend)
+```
+python context_pruner.py --demo
+python context_pruner.py reranked.json --query "what is RRF?" --out pruned.json
+python context_pruner.py reranked.json --query "what is RRF?" --backend sentence
+```
+
+### `sufficient_context.py`
+Most RAG hallucinations aren't the generator ignoring good context — they're the generator answering confidently from context that never had the answer. Implements the **sufficient context** framing from [Joren et al.](https://arxiv.org/abs/2411.06037) (Google, ICLR 2025): an LLM autorater labels each (query, context) pair sufficient / insufficient *without needing a ground-truth answer*, so it runs in production, not just in eval. The paper found frontier models rarely abstain on insufficient context, and that self-confidence alone is a weak abstention signal — combining the two in a tiny logistic model (**selective generation**) raised accuracy on answered queries by 2–10%. `SelectiveGate` does exactly that: four weights, fit on a labeled eval set, thresholded to a target coverage, with the coverage/accuracy curve printed against confidence-only so you can see whether the extra call earns its keep. Also prints the paper's 2x2 diagnosis — *insufficient + wrong* is a retrieval/abstention problem, *sufficient + wrong* is a generator problem. `--demo` runs offline on synthetic ratings.
+
+**Deps:** `anthropic`, `ANTHROPIC_API_KEY` env var
+```
+python sufficient_context.py --demo
+python sufficient_context.py evals.jsonl --fit gate.json --coverage 0.8
+python sufficient_context.py new.jsonl --gate gate.json   # adds _answer: true/false
 ```
