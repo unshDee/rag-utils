@@ -13,6 +13,7 @@ rerank      cross_encoder_reranker.py · context_pruner.py
 pack        context_window_packer.py
 gate        sufficient_context.py (should we answer at all?)
 evaluate    eval_set_generator.py → retrieval_eval.py (did we find it?) · answer_eval.py (did we use it?)
+            retrieval_ab_test.py (is the difference real?)
 observe     rag_tracer.py
 ```
 
@@ -205,4 +206,18 @@ Most RAG hallucinations aren't the generator ignoring good context — they're t
 python sufficient_context.py --demo
 python sufficient_context.py evals.jsonl --fit gate.json --coverage 0.8
 python sufficient_context.py new.jsonl --gate gate.json   # adds _answer: true/false
+```
+
+### `retrieval_ab_test.py`
+`retrieval_eval.py` gives you one mean per metric, and on a 30 to 50 query eval set a +0.03 MRR bump is usually just a few queries swapping rank 1 and rank 2. This takes two runs in the same JSONL format (baseline and candidate, joined on `query_id` or `query`) and tests the per-query differences: a **paired randomization test** (sign flips), a **paired bootstrap CI** on the delta, **Holm-Bonferroni** correction across metrics, win/tie/loss counts, and how many queries you'd need for 80% power at a given effect. Pairing is what gives you the power here, since query difficulty swings scores far more than the system change does. The randomization test is the one [Smucker, Allan & Carterette (CIKM 2007)](https://doi.org/10.1145/1321440.1321528) recommend for IR evals; sign and Wilcoxon tests disagree with it and are best skipped. On the demo, the same system run twice "drops" hit@1 by 0.10 on 40 queries (p=0.44, correctly not significant), and a real +0.1 gap stays invisible at 30 queries but is clearly significant at 400 (p_holm=0.01, CI fully above zero). Shuffling the `--generate-sample` rankings gives a +0.15 recall@5 "win" that also comes out as noise.
+
+**Deps:** stdlib only
+```
+python retrieval_ab_test.py --demo
+python retrieval_ab_test.py baseline.jsonl candidate.jsonl --metrics mrr ndcg@10 --mde 0.02
+python retrieval_ab_test.py baseline.jsonl candidate.jsonl --out ab_report.json
+```
+```python
+report = compare(records_a, records_b, metrics=["mrr", "recall@5"])
+report["mrr"]["p_holm"], report["mrr"]["ci"], report["mrr"]["queries_needed"]
 ```
