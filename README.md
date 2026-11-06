@@ -10,6 +10,7 @@ enrich      contextual_retrieval.py · late_chunking.py · embedding_cache.py
 index       binary_quant_index.py
 retrieve    hybrid_retriever.py · query_expander.py
 rerank      cross_encoder_reranker.py · context_pruner.py
+expand      small_to_big.py (small hits → surrounding window / parent section)
 pack        context_window_packer.py
 gate        sufficient_context.py (should we answer at all?)
 evaluate    eval_set_generator.py → retrieval_eval.py (did we find it?) · answer_eval.py (did we use it?)
@@ -220,4 +221,18 @@ python retrieval_ab_test.py baseline.jsonl candidate.jsonl --out ab_report.json
 ```python
 report = compare(records_a, records_b, metrics=["mrr", "recall@5"])
 report["mrr"]["p_holm"], report["mrr"]["ci"], report["mrr"]["queries_needed"]
+```
+
+### `small_to_big.py`
+Small chunks retrieve better, big chunks answer better, so index small and expand at query time. [Dense X Retrieval](https://arxiv.org/abs/2312.06648) (Chen et al. 2023) showed finer retrieval units beat passages on recall, but the sentence you retrieve is often "It gives each document 1/(k + rank)..." and the generator has no idea what "it" is. This takes reranked hits plus the full chunk corpus and turns each hit back into a span from its source doc: grow it by N neighbours either side under a per-span token cap (sentence-window retrieval), merge windows that touch or overlap so adjacent hits don't put the same text in the prompt twice, and **auto-merge** to the whole parent section when enough of its children got hit (same idea as LlamaIndex's AutoMergingRetriever and LangChain's ParentDocumentRetriever). Parents are fixed runs of N children or runs of the same value of a key like `headings` from `docx_to_chunks.py`, in which case windows also stop at section boundaries. Output keeps `chunk_id`/`text`/`score`, so it goes straight into `context_window_packer.py`. On the demo, where each answer sits in the sentence after the one the keywords match, small top-2 covers 70% of the needed sentences, 4-sentence chunks cover 90% at ~141 tokens/query, and small-to-big covers 100% at ~80.
+
+**Deps:** stdlib only
+```
+python small_to_big.py --demo
+python small_to_big.py reranked.json --chunks chunks.json --window 2 --out expanded.json
+python small_to_big.py reranked.json --chunks chunks.json --parent-key headings --merge-ratio 0.5
+```
+```python
+s2b = SmallToBig(corpus_chunks, window=1, max_tokens=400)
+spans = s2b.expand(hits)   # [{"chunk_id": "doc#3-5", "text": ..., "score": ..., "hit_ids": [...]}, ...]
 ```
