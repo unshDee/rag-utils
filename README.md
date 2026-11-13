@@ -5,7 +5,7 @@ Each script is standalone — no framework, no shared package to install, copy t
 
 ```
 ingest      docx_to_chunks.py · pdf_to_markdown.py
-chunk       semantic_chunker.py · chunk_overlap_merger.py · chunk_quality_scorer.py · semantic_dedup.py
+chunk       markdown_chunker.py · semantic_chunker.py · chunk_overlap_merger.py · chunk_quality_scorer.py · semantic_dedup.py
 enrich      contextual_retrieval.py · late_chunking.py · embedding_cache.py
 index       binary_quant_index.py
 retrieve    hybrid_retriever.py · query_expander.py
@@ -235,4 +235,18 @@ python small_to_big.py reranked.json --chunks chunks.json --parent-key headings 
 ```python
 s2b = SmallToBig(corpus_chunks, window=1, max_tokens=400)
 spans = s2b.expand(hits)   # [{"chunk_id": "doc#3-5", "text": ..., "score": ..., "hit_ids": [...]}, ...]
+```
+
+### `markdown_chunker.py`
+Fixed-size splitters treat markdown as a flat string and break it in the same places every time: a table gets cut after row 6 so the next chunk is rows 7 to 14 with no header (`| enterprise | 5000 | 130 | 13 |` retrieves fine and tells the LLM nothing), a code fence gets cut in half, and the end of one section shares a chunk with the start of the next. This parses the structure first and packs second. A heading always starts a new chunk, tables and fenced code are atomic, and when one is over the budget it's split by rows or lines with the header row (or the fence and its language tag) repeated on every piece. Oversize paragraphs split on sentences, lists on items. Every chunk carries the heading trail in `headings` and, by default, prepended to `text` (`Guide > Rate limits`), which is a free, no-LLM version of what `contextual_retrieval.py` does for chunks like "It defaults to 60". Same idea as LangChain's `MarkdownHeaderTextSplitter`, plus the table handling. Fences are matched before headings, so a `# comment` in a bash block doesn't become a section. Takes `pdf_to_markdown.py` output, and since `headings` matches `docx_to_chunks.py`, `small_to_big.py --parent-key headings` works on the result as is. On the demo (14-row table, 120-token budget), fixed-size chunking leaves 5 of 14 rows in a chunk with their header, this keeps 14 of 14 with no chunk over budget.
+
+**Deps:** stdlib only
+```
+python markdown_chunker.py --demo
+python markdown_chunker.py paper.md --out chunks.json
+python markdown_chunker.py docs/*.md --max-tokens 300 --no-breadcrumb
+```
+```python
+chunks = chunk_markdown(md_text, source="guide.md", max_tokens=400)
+chunks[0]["headings"], chunks[0]["chunk_type"]   # ["Guide", "Rate limits"], "table"
 ```
