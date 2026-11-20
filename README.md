@@ -10,6 +10,7 @@ enrich      contextual_retrieval.py · late_chunking.py · embedding_cache.py
 index       binary_quant_index.py
 retrieve    hybrid_retriever.py · query_expander.py
 rerank      cross_encoder_reranker.py · context_pruner.py
+guard       injection_scanner.py (is a retrieved chunk trying to give orders?)
 expand      small_to_big.py (small hits → surrounding window / parent section)
 pack        context_window_packer.py
 gate        sufficient_context.py (should we answer at all?)
@@ -249,4 +250,19 @@ python markdown_chunker.py docs/*.md --max-tokens 300 --no-breadcrumb
 ```python
 chunks = chunk_markdown(md_text, source="guide.md", max_tokens=400)
 chunks[0]["headings"], chunks[0]["chunk_type"]   # ["Guide", "Rate limits"], "table"
+```
+
+### `injection_scanner.py`
+Everything you index was written by someone else, and retrieval drops it right next to your instructions. One scraped page or uploaded PDF that says "ignore previous instructions and..." only has to rank for some query, that's [indirect prompt injection](https://arxiv.org/abs/2302.12173) (Greshake et al. 2023). This scores each chunk and drops or flags the bad ones. The `heuristic` backend is weighted regexes (override phrases, fake `<|im_start|>system` turns, "do not tell the user", markdown-image exfil URLs, "if you are an AI...") combined noisy-OR style, but run on **normalized** text: zero-width chars stripped, fullwidth letters folded by NFKC, base64 blobs decoded, and invisible unicode tag chars (U+E0000 block, "ASCII smuggling") decoded back to ASCII. That last part is where the payloads that get past naive filters live. Legit cases are left alone: ZWJ/ZWNJ (emoji, Persian/Hindi) and subdivision flags like Wales, which are tag chars too. The `classifier` backend runs `protectai/deberta-v3-base-prompt-injection-v2` in windows for paraphrased attacks the regexes don't know, `both` takes the max. Then `spotlight()` wraps kept chunks in `<doc-NONCE>` tags with a fresh random nonce per request, plus a system prompt line saying tagged text is data, not instructions ([Spotlighting](https://arxiv.org/abs/2403.14720), Hines et al. 2024). Neither is a guarantee, so don't let retrieved text trigger tools that can do damage. On the demo (9 attacks, 10 benign chunks including "you can ignore the deprecation warnings" and a Wales flag), the same rules on raw text catch 7/9, normalized catches 9/9, both with 0 false positives. Docs *about* prompt injection will get flagged, use `--action flag` on those.
+
+**Deps:** stdlib only (heuristic), `transformers`, `torch` (classifier)
+```
+python injection_scanner.py --demo
+python injection_scanner.py results.json --out clean.json
+python injection_scanner.py chunks.json --action flag --report flagged.json
+python injection_scanner.py results.json --backend both --spotlight --out clean.json
+```
+```python
+kept, flagged = scan_chunks(chunks, threshold=0.5)
+wrapped, nonce = spotlight(kept)   # system prompt gets SPOTLIGHT_PROMPT.format(tag=f"doc-{nonce}")
 ```
